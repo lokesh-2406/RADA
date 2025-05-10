@@ -14,6 +14,7 @@ with gr.Blocks() as demo:
     with gr.Row():
         with gr.Column(scale=1):
             file_output = gr.Files(label="Upload PDFs")
+            state=gr.State()
             system_prompt = gr.Textbox(
                 label="System Prompt",
                 value="You are a helpful assistant. Answer the user's questions using only the information contained in the uploaded PDF documents. If the answer is not present in the documents, say 'I could not find the answer in the provided PDFs.' Be concise, accurate, and cite the relevant section or page if possible."
@@ -26,12 +27,12 @@ with gr.Blocks() as demo:
     file_output.upload(
         fn=load_documents,
         inputs=file_output,
-        outputs=gr.State()
+        outputs=state
     )
     
     msg.submit(
         fn=predict,
-        inputs=[msg, chatbot, file_output, system_prompt],
+        inputs=[msg, chatbot, state, system_prompt],
         outputs=chatbot
     )
 
