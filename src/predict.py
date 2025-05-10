@@ -3,6 +3,9 @@ from src.vectorstore import get_chroma_collection, inspect_vectorstore
 import os
 from dotenv import load_dotenv
 from loguru import logger
+from openai import OpenAI
+
+
 
 def predict(message, history, collection, system_prompt):
     """
@@ -11,7 +14,7 @@ def predict(message, history, collection, system_prompt):
     Args:
         message (str): The user's message.
         history (list): The chat history.
-        state (tuple of documents and collection): The state of the documents and collection.
+        collection: The Chroma collection object.
         system_prompt (str): The system prompt for the chatbot.
 
     Returns:
@@ -19,35 +22,47 @@ def predict(message, history, collection, system_prompt):
     """
     load_dotenv()
     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY") 
-    # logger.info(f"Documents: {documents}")
-    logger.info(f"Collection: {collection}")
+    
     # Append user message to history
     history.append((message, None))
-    # if you want to debug:
-    report = inspect_vectorstore()
-    print("Vectorstore report:", report)
-
-    context_chunks = collection.query(
-        query_embeddings=collection.embedding_function.embed_query(message),
-        n_results=3
-    )["documents"][0]
-    # # Get relevant documents from the retriever
-    # docs = retriever.get_relevant_documents(message, k=3)
     
-    # Generate a response using the OpenAI API
-    response = openai.ChatCompletion.create(
+    # Check if collection exists
+    if collection is None:
+        # No documents have been uploaded yet
+        reply = "Please upload PDF documents first before asking questions."
+        history[-1] = (message, reply)
+        return history
+    
+    try:
+        # Get relevant context chunks from the collection
+        context_chunks = collection.similarity_search(message, k=3)
+        context_text = "\n\n".join([doc.page_content for doc in context_chunks])
+        
+        # Generate a response using the OpenAI API
+        client = OpenAI()
+        completion = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message},
-            {"role": "assistant", "content": "\n\n".join(context_chunks)}
-        ]
-    )
-    logger.info(f"Response: {response}")
-    # Extract the assistant's reply
-    reply = response['choices'][0]['message']['content']
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Question: {message}\n\nContext: {context_text}"}
+            ]
+        )
+        # response = openai.ChatCompletion.create(
+        #     model="gpt-3.5-turbo",
+        #     messages=[
+        #         {"role": "system", "content": system_prompt},
+        #         {"role": "user", "content": f"Question: {message}\n\nContext: {context_text}"}
+        #     ]
+        # )
+        
+        # Extract the assistant's reply
+        reply = completion.choices[0].message.content
+        
+    except Exception as e:
+        logger.error(f"Error in prediction: {e}")
+        reply = f"An error occurred while processing your question: {str(e)}"
     
     # Update the last entry in history with the bot's response
-    history[-1] = (message,reply)
+    history[-1] = (message, reply)
     
     return history

@@ -1,103 +1,109 @@
 import os
-from langchain_chroma import Chroma
-from chromadb import PersistentClient
-from chromadb.config import Settings
+from langchain_community.vectorstores import Chroma
 from langchain_openai.embeddings import OpenAIEmbeddings
 from dotenv import load_dotenv
-# 1.1 Initialize ChromaDB client and collection
-# def get_chroma_collection(persist_directory: str = "./chroma_db", collection_name: str = "pdf_chunks"):
-#     """
-#     Returns a ChromaDB collection, creating it if needed.
-#     """
-#     load_dotenv()
-#     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-#     os.makedirs(persist_directory, exist_ok=True)
-#     client = PersistentClient(path=persist_directory)  # New client
-#     embedding_fn = OpenAIEmbeddings(model="text-embedding-3-large")
-#     collection = client.get_or_create_collection(
-#         name=collection_name,
-#         embedding_function=embedding_fn
-#     )
-#     return collection
+from loguru import logger
+
 def get_chroma_collection(persist_directory: str = "./chroma_db"):
+    """
+    Returns a ChromaDB collection, creating it if needed.
+    """
     load_dotenv()
-    os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-    embedding_fn = OpenAIEmbeddings(model="text-embedding-3-large")
-    return Chroma(
-        collection_name="pdf_chunks",
-        embedding_function=embedding_fn,
-        persist_directory=persist_directory
-    )
-
-# 1.2 Create or update the vectorstore
-# def create_vectorstore(chunks: list[str], metadatas: list[dict], ids: list[str]):
-#     """
-#     Upserts the provided chunks into ChromaDB with embeddings and metadata.
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.error("OPENAI_API_KEY not found in environment")
+        raise ValueError("OPENAI_API_KEY not found in environment")
     
-#     Args:
-#       - chunks: List of text chunks.
-#       - metadatas: Parallel list of metadata dicts (e.g. {"source": ..., "page": ...}).
-#       - ids: Unique IDs for each chunk.
-#     """
-#     collection = get_chroma_collection()
-#     collection.upsert(
-#         ids=ids,
-#         embeddings=None,        # letting Chroma call the embedding function internally
-#         documents=chunks,
-#         metadatas=metadatas
-#     )
-#     collection.persist()
-#     return collection
-def create_vectorstore(chunks, metadatas, ids):
-    load_dotenv()
-    os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-    collection = Chroma(
-        collection_name="pdf_chunks",
-        embedding_function=OpenAIEmbeddings(),
-        persist_directory="./chroma_db"
-    )
-    collection.add_texts(
-        texts=chunks,
-        metadatas=metadatas,
-        ids=ids
-    )
-    # chroma_client = get_chroma_collection()
-    # chroma_client.add_documents(
-    #     documents=chunks,
-    #     metadatas=metadatas,
-    #     ids=ids
-    # )
-    # collection.persist()
-    return collection
+    try:
+        embedding_fn = OpenAIEmbeddings(model="text-embedding-3-large")
+        return Chroma(
+            collection_name="pdf_chunks",
+            embedding_function=embedding_fn,
+            persist_directory=persist_directory
+        )
+    except Exception as e:
+        logger.error(f"Error getting Chroma collection: {e}")
+        raise
 
-# 1.3 Inspecting the collection
+def create_vectorstore(texts, metadatas, ids):
+    """
+    Creates or updates a vector store with the provided texts and metadata.
+    
+    Args:
+        texts (list): List of text chunks to index.
+        metadatas (list): List of metadata dictionaries.
+        ids (list): List of unique IDs for each chunk.
+        
+    Returns:
+        The Chroma collection object.
+    """
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.error("OPENAI_API_KEY not found in environment")
+        return None
+        
+    # Ensure directory exists
+    os.makedirs("./chroma_db", exist_ok=True)
+    
+    try:
+        # Create embedding function
+        embedding_function = OpenAIEmbeddings(model="text-embedding-3-large")
+        
+        # Create the vector store
+        collection = Chroma.from_texts(
+            texts=texts,
+            embedding=embedding_function,
+            metadatas=metadatas,
+            ids=ids,
+            persist_directory="./chroma_db",
+            collection_name="pdf_chunks"
+        )
+        
+        # Ensure the changes are persisted
+        collection.persist()
+        logger.info("Vector store created and persisted successfully")
+        return collection
+        
+    except Exception as e:
+        logger.error(f"Error creating vector store: {e}")
+        return None
+
 def inspect_vectorstore(collection=None):
     """
-    Iterates over all stored chunks and reports:
-      - Total count
-      - Any empty documents
-      - Missing metadata fields
+    Inspects the vector store and returns a report.
+    
+    Args:
+        collection: Optional Chroma collection. If not provided, one will be loaded.
+        
+    Returns:
+        A dictionary with statistics about the vector store.
     """
-    collection = collection or get_chroma_collection()
-    # Retrieve everything
-    res = collection.get(
-        include=["ids", "documents", "metadatas"]
-    )
-    ids       = res["ids"]
-    docs      = res["documents"]
-    metadatas = res["metadatas"]
-
-    report = {
-        "total_chunks": len(ids),
-        "empty_chunks": [],
-        "missing_metadata": []
-    }
-
-    for idx, (doc, meta) in enumerate(zip(docs, metadatas)):
-        if not doc.strip():
-            report["empty_chunks"].append(ids[idx])
-        # Example check: ensure each meta has a 'source' key
-        if "source" not in meta:
-            report["missing_metadata"].append(ids[idx])
-
-    return report
+    try:
+        if collection is None:
+            collection = get_chroma_collection()
+            
+        if collection is None:
+            return {"error": "No collection available"}
+            
+        # Get all documents
+        all_docs = collection.get()
+        
+        if not all_docs or not all_docs.get('ids'):
+            return {
+                "total_chunks": 0,
+                "status": "Vector store exists but contains no documents"
+            }
+            
+        # Create report
+        report = {
+            "total_chunks": len(all_docs['ids']),
+            "collection_name": "pdf_chunks",
+            "status": "Vector store is available and contains documents"
+        }
+        
+        return report
+        
+    except Exception as e:
+        logger.error(f"Error inspecting vector store: {e}")
+        return {"error": str(e)}
