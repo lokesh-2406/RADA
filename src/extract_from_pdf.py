@@ -6,6 +6,7 @@ from src.chunking.chunking import character_chunk_documents
 from src.vectorstore import create_vectorstore
 import tqdm
 import os
+from loguru import logger
 from dotenv import load_dotenv
 def load_documents(pdfs):
     '''Load documents from a directory.'''
@@ -19,18 +20,21 @@ def load_documents(pdfs):
         loader_cls=PyPDFLoader,
         show_progress=True
     )
+    logger.info(f"Loading documents from {pdfs}")
     documents = loader.load()
     
     # 1. Chunk
     chunks = character_chunk_documents(documents)
+    logger.info(f"Loaded {len(documents)} documents and split them into {len(chunks)} chunks, using CharacterTextSplitter.")
 
     # 2. Prepare metadata & IDs
     pdf_name = os.path.basename(pdfs[0].name)  # assume single-dir
     ids = [f"{pdf_name}_{i}" for i in range(len(chunks))]
     metadatas = [{"source": pdf_name} for _ in chunks]
-
+    logger.info(f"Loaded {len(chunks)} chunks and prepared metadata and IDs.")
     # 3. Index
     collection = create_vectorstore(chunks, metadatas, ids)
+    logger.info(f"Indexed {len(chunks)} chunks into ChromaDB.")
 
     # Return raw docs *and* the Chroma collection object
     return documents, collection

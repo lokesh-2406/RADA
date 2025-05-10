@@ -1,7 +1,6 @@
 #Setting up the gradio stuff
 import gradio as gr
-import openai
-import os
+from loguru import logger
 from dotenv import load_dotenv
 from src.extract_from_pdf import load_documents
 from src.chunking.chunking import character_chunk_documents
@@ -14,7 +13,6 @@ with gr.Blocks() as demo:
     with gr.Row():
         with gr.Column(scale=1):
             file_output = gr.Files(label="Upload PDFs")
-            state=gr.State()
             system_prompt = gr.Textbox(
                 label="System Prompt",
                 value="You are a helpful assistant. Answer the user's questions using only the information contained in the uploaded PDF documents. If the answer is not present in the documents, say 'I could not find the answer in the provided PDFs.' Be concise, accurate, and cite the relevant section or page if possible."
@@ -23,16 +21,16 @@ with gr.Blocks() as demo:
             chatbot = gr.Chatbot()
             msg = gr.Textbox(label="Your Question")
             clear = gr.ClearButton([msg, chatbot])
-    
     file_output.upload(
         fn=load_documents,
         inputs=file_output,
-        outputs=state
+        outputs=gr.State(),  # This will be the state of the documents and collection
+        show_progress=True
     )
     
     msg.submit(
         fn=predict,
-        inputs=[msg, chatbot, state, system_prompt],
+        inputs=[msg, chatbot, gr.State(), system_prompt],
         outputs=chatbot
     )
 

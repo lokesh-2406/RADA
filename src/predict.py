@@ -2,7 +2,7 @@ import openai
 from src.vectorstore import get_chroma_collection, inspect_vectorstore
 import os
 from dotenv import load_dotenv
-
+from loguru import logger
 
 def predict(message, history, state, system_prompt):
     """
@@ -20,11 +20,14 @@ def predict(message, history, state, system_prompt):
     load_dotenv()
     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY") 
     documents, collection = state  # unpack 
+    logger.info(f"Documents: {documents}")
+    logger.info(f"Collection: {collection}")
     # Append user message to history
     history.append((message, None))
     # if you want to debug:
     report = inspect_vectorstore()
     print("Vectorstore report:", report)
+
     context_chunks = collection.query(
         query_embeddings=collection.embedding_function.embed_query(message),
         n_results=3
@@ -41,7 +44,7 @@ def predict(message, history, state, system_prompt):
             {"role": "assistant", "content": "\n\n".join(context_chunks)}
         ]
     )
-    
+    logger.info(f"Response: {response}")
     # Extract the assistant's reply
     reply = response['choices'][0]['message']['content']
     
