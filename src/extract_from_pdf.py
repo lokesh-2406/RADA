@@ -5,6 +5,7 @@ from langchain_community.document_loaders import TextLoader
 from src.chunking.chunking import character_chunk_documents
 from src.vectorstore import create_vectorstore
 import tqdm
+import uuid
 import os
 import fitz  # PyMuPDF
 from loguru import logger
@@ -17,7 +18,7 @@ def load_documents(pdfs):
     logger.info(f"PyMuPDF version: {fitz.__doc__}")
     for pdf_path in pdfs:
         # 1. Load with PyMuPDF
-        loader = PyMuPDFLoader(pdf_path,)
+        loader = PyMuPDFLoader(pdf_path)
         documents = loader.load()
         
         # 2. Extract native metadata
@@ -46,8 +47,11 @@ def load_documents(pdfs):
     ids = [f"{meta['source']}_{meta['page']}_{idx}" for idx, meta in enumerate(all_metadatas)]
     logger.info(f"Loaded {len(documents)} documents and split them into {len(all_chunks)} chunks, using CharacterTextSplitter.")
     # 6. Index
-    collection = create_vectorstore(all_chunks, all_metadatas, ids)
+    texts = [doc.page_content for doc in all_chunks]  # Extract text from Documents
+    metadatas = [doc.metadata for doc in all_chunks]  # Extract metadata
+    ids = [str(uuid.uuid4()) for _ in texts]  # Generate unique IDs
+    collection = create_vectorstore(texts, metadatas, ids)
     logger.info(f"Indexed {len(chunks)} chunks into ChromaDB.")
 
     # Return raw docs *and* the Chroma collection object
-    return documents, collection
+    return collection

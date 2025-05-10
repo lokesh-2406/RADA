@@ -49,14 +49,27 @@ def get_chroma_collection(persist_directory: str = "./chroma_db"):
 #     collection.persist()
 #     return collection
 def create_vectorstore(chunks, metadatas, ids):
-    chroma_client = get_chroma_collection()
-    chroma_client.add_documents(
-        documents=chunks,
+    load_dotenv()
+    os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+    collection = Chroma(
+        collection_name="pdf_chunks",
+        embedding_function=OpenAIEmbeddings(),
+        persist_directory="./chroma_db"
+    )
+    collection.add_texts(
+        texts=chunks,
         metadatas=metadatas,
         ids=ids
     )
-    chroma_client.persist()
-    return chroma_client
+    # chroma_client = get_chroma_collection()
+    # chroma_client.add_documents(
+    #     documents=chunks,
+    #     metadatas=metadatas,
+    #     ids=ids
+    # )
+    # collection.persist()
+    return collection
+
 # 1.3 Inspecting the collection
 def inspect_vectorstore(collection=None):
     """
