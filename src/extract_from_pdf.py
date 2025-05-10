@@ -1,8 +1,7 @@
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.document_loaders import DirectoryLoader 
 from langchain_community.document_loaders import TextLoader
-from src.chunking.chunking import character_chunk_documents 
-from src.chunking.semantic_chunking import semantic_chunk_documents
+from src.chunking.chunking_factory import ChunkingFactory
 from src.vectorstore import create_vectorstore
 import tqdm
 import uuid
@@ -10,8 +9,19 @@ import os
 import fitz  # PyMuPDF
 from loguru import logger
 
-def load_documents(pdfs):
-    '''Load documents from uploaded PDFs and create a vector store.'''
+def load_documents(pdfs, chunking_method="hybrid", chunk_size=500, chunk_overlap=50):
+    '''
+    Load documents from uploaded PDFs and create a vector store.
+    
+    Args:
+        pdfs: List of PDF files
+        chunking_method: The chunking method to use (default: "hybrid")
+        chunk_size: Size of chunks (default: 500)
+        chunk_overlap: Overlap between chunks (default: 50)
+        
+    Returns:
+        A Chroma collection
+    '''
     if not pdfs:
         logger.warning("No PDFs provided")
         return None
@@ -20,6 +30,13 @@ def load_documents(pdfs):
     all_metadatas = []
     logger.info(f"fitz version: {fitz.__version__}")
     logger.info(f"PyMuPDF version: {fitz.__doc__}")
+    
+    # Get the chunking function from the factory
+    chunker = ChunkingFactory.create_chunker(
+        method=chunking_method, 
+        chunk_size=chunk_size, 
+        chunk_overlap=chunk_overlap
+    )
     
     for pdf_path in pdfs:
         logger.info(f"Processing PDF: {pdf_path}")
@@ -34,7 +51,8 @@ def load_documents(pdfs):
                 "source": os.path.basename(pdf_path),
                 "author": doc.metadata.get("author"),
                 "title": doc.metadata.get("title"),
-                "creation_date": doc.metadata.get("creationDate")
+                "creation_date": doc.metadata.get("creationDate"),
+                "chunking_method": chunking_method
             }
             
             # 3. Process each page
@@ -47,8 +65,8 @@ def load_documents(pdfs):
                 }
                 page_metadatas.append(page_metadata)
             
-            # 4. Chunk documents
-            chunks = semantic_chunk_documents(documents)
+            # 4. Chunk documents using the selected method
+            chunks = chunker(documents)
             
             # Ensure chunks and metadata align
             for i, chunk in enumerate(chunks):
@@ -72,7 +90,7 @@ def load_documents(pdfs):
     # 5. Generate unique IDs
     ids = [str(uuid.uuid4()) for _ in all_chunks]
     
-    logger.info(f"Created {len(all_chunks)} chunks from {len(pdfs)} documents")
+    logger.info(f"Created {len(all_chunks)} chunks from {len(pdfs)} documents using {chunking_method} chunking")
     
     # 6. Create vector store
     try:
