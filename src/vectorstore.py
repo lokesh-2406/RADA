@@ -1,47 +1,62 @@
 import os
-from chromadb import Client
+from langchain_chroma import Chroma
+from chromadb import PersistentClient
 from chromadb.config import Settings
 from langchain_openai.embeddings import OpenAIEmbeddings
 from dotenv import load_dotenv
 # 1.1 Initialize ChromaDB client and collection
-def get_chroma_collection(persist_directory: str = "./chroma_db", collection_name: str = "pdf_chunks"):
-    """
-    Returns a ChromaDB collection, creating it if needed.
-    """
+# def get_chroma_collection(persist_directory: str = "./chroma_db", collection_name: str = "pdf_chunks"):
+#     """
+#     Returns a ChromaDB collection, creating it if needed.
+#     """
+#     load_dotenv()
+#     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+#     os.makedirs(persist_directory, exist_ok=True)
+#     client = PersistentClient(path=persist_directory)  # New client
+#     embedding_fn = OpenAIEmbeddings(model="text-embedding-3-large")
+#     collection = client.get_or_create_collection(
+#         name=collection_name,
+#         embedding_function=embedding_fn
+#     )
+#     return collection
+def get_chroma_collection(persist_directory: str = "./chroma_db"):
     load_dotenv()
     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-    os.makedirs(persist_directory, exist_ok=True)
-    client = Client(Settings(
-        chroma_db_impl="duckdb+parquet",
-        persist_directory=persist_directory
-    ))
     embedding_fn = OpenAIEmbeddings(model="text-embedding-3-large")
-    collection = client.get_or_create_collection(
-        name=collection_name,
-        embedding_function=embedding_fn
+    return Chroma(
+        collection_name="pdf_chunks",
+        embedding_function=embedding_fn,
+        persist_directory=persist_directory
     )
-    return collection
 
 # 1.2 Create or update the vectorstore
-def create_vectorstore(chunks: list[str], metadatas: list[dict], ids: list[str]):
-    """
-    Upserts the provided chunks into ChromaDB with embeddings and metadata.
+# def create_vectorstore(chunks: list[str], metadatas: list[dict], ids: list[str]):
+#     """
+#     Upserts the provided chunks into ChromaDB with embeddings and metadata.
     
-    Args:
-      - chunks: List of text chunks.
-      - metadatas: Parallel list of metadata dicts (e.g. {"source": ..., "page": ...}).
-      - ids: Unique IDs for each chunk.
-    """
-    collection = get_chroma_collection()
-    collection.upsert(
-        ids=ids,
-        embeddings=None,        # letting Chroma call the embedding function internally
+#     Args:
+#       - chunks: List of text chunks.
+#       - metadatas: Parallel list of metadata dicts (e.g. {"source": ..., "page": ...}).
+#       - ids: Unique IDs for each chunk.
+#     """
+#     collection = get_chroma_collection()
+#     collection.upsert(
+#         ids=ids,
+#         embeddings=None,        # letting Chroma call the embedding function internally
+#         documents=chunks,
+#         metadatas=metadatas
+#     )
+#     collection.persist()
+#     return collection
+def create_vectorstore(chunks, metadatas, ids):
+    chroma_client = get_chroma_collection()
+    chroma_client.add_documents(
         documents=chunks,
-        metadatas=metadatas
+        metadatas=metadatas,
+        ids=ids
     )
-    collection.persist()
-    return collection
-
+    chroma_client.persist()
+    return chroma_client
 # 1.3 Inspecting the collection
 def inspect_vectorstore(collection=None):
     """

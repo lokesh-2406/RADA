@@ -1,39 +1,52 @@
 #Load documents or pdfs
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.document_loaders import DirectoryLoader 
 from langchain_community.document_loaders import TextLoader
 from src.chunking.chunking import character_chunk_documents
 from src.vectorstore import create_vectorstore
 import tqdm
 import os
+import fitz  # PyMuPDF
 from loguru import logger
-from dotenv import load_dotenv
 def load_documents(pdfs):
     '''Load documents from a directory.'''
-    load_dotenv()
-    #setup openai api key from environment variable
-    os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
     # Load documents from a directory
-    loader = DirectoryLoader(
-        pdfs,
-        glob="**/*.pdf", #which tyoe of files to load
-        loader_cls=PyPDFLoader,
-        show_progress=True
-    )
-    logger.info(f"Loading documents from {pdfs}")
-    documents = loader.load()
+    all_chunks = []
+    all_metadatas = []
+    logger.info(f"fitz version: {fitz.__version__}")
+    logger.info(f"PyMuPDF version: {fitz.__doc__}")
+    for pdf_path in pdfs:
+        # 1. Load with PyMuPDF
+        loader = PyMuPDFLoader(pdf_path,)
+        documents = loader.load()
+        
+        # 2. Extract native metadata
+        doc = fitz.open(pdf_path)
+        base_metadata = {
+            "source": os.path.basename(pdf_path),
+            "author": doc.metadata.get("author"),
+            "title": doc.metadata.get("title"),
+            "creation_date": doc.metadata.get("creationDate")
+        }
+        
+        # 3. Add page-specific metadata
+        for i, page_doc in enumerate(documents):
+            page_metadata = {
+                **base_metadata,
+                "page": i+1,
+                "section": page_doc.metadata.get("section", "")
+            }
+            all_metadatas.append(page_metadata)
+        
+        # 4. Chunk with metadata
+        chunks = character_chunk_documents(documents)
+        all_chunks.extend(chunks)
     
-    # 1. Chunk
-    chunks = character_chunk_documents(documents)
-    logger.info(f"Loaded {len(documents)} documents and split them into {len(chunks)} chunks, using CharacterTextSplitter.")
-
-    # 2. Prepare metadata & IDs
-    pdf_name = os.path.basename(pdfs[0].name)  # assume single-dir
-    ids = [f"{pdf_name}_{i}" for i in range(len(chunks))]
-    metadatas = [{"source": pdf_name} for _ in chunks]
-    logger.info(f"Loaded {len(chunks)} chunks and prepared metadata and IDs.")
-    # 3. Index
-    collection = create_vectorstore(chunks, metadatas, ids)
+    # 5. Generate unique IDs
+    ids = [f"{meta['source']}_{meta['page']}_{idx}" for idx, meta in enumerate(all_metadatas)]
+    logger.info(f"Loaded {len(documents)} documents and split them into {len(all_chunks)} chunks, using CharacterTextSplitter.")
+    # 6. Index
+    collection = create_vectorstore(all_chunks, all_metadatas, ids)
     logger.info(f"Indexed {len(chunks)} chunks into ChromaDB.")
 
     # Return raw docs *and* the Chroma collection object
